@@ -12,10 +12,14 @@ def save_legacy_documents(client, corp_code, year, outdir):
     outdir=Path(outdir); outdir.mkdir(parents=True, exist_ok=True)
     disclosures=client.disclosures(corp_code, f"{year}0101", f"{year}1231")
     wanted=[]
+    import zipfile
     for d in disclosures:
         name=d.get("report_nm","")
-        if any(k in name for k in ("사업보고서","반기보고서","분기보고서")):
+        if any(k in name for k in ("사업보고서","반기보고서","분기보고서")) and not name.startswith("[정정]"):
             wanted.append(d)
-            content=client.document_zip(d["rcept_no"])
-            (outdir/f'{d["rcept_no"]}.zip').write_bytes(content)
+            target=outdir/f'{d["rcept_no"]}.zip'
+            if not target.exists():
+                content=client.document_zip(d["rcept_no"])
+                if not zipfile.is_zipfile(io.BytesIO(content)): raise RuntimeError(f"원문 ZIP 오류: {d['rcept_no']}")
+                target.write_bytes(content)
     return wanted

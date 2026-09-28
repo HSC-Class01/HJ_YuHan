@@ -61,3 +61,6 @@ python -m http.server 8000 -d docs
 
 ## 주의
 재무비율은 자동 분석 보조자료입니다. 계정명 변화, 정정공시, 연결범위 변경, 일회성 항목은 원문 공시와 함께 검증해야 합니다.
+
+## 배포 참고
+ZIP의 파일을 저장소 **루트에 병합**하세요(`.github/workflows` 포함). 자동 실행은 월 1일 09:15 KST 예정이며 지연될 수 있습니다. Settings → Actions → General → Workflow permissions를 Read and write permissions로 설정하고 Pages Source를 GitHub Actions로 선택하세요. 초기 데이터가 없는 동안 대시보드는 실데이터 미수집을 표시합니다. 2010–2014는 원문 수집만 지원하고 재무수치 자동 추출은 지원하지 않습니다. 배지 이미지는 첨부 이미지가 제공되지 않아 Shields.io 기본 배지를 사용했습니다.

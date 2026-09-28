@@ -1,6 +1,6 @@
 
 import os, json
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 import pandas as pd
 from dart_client import DartClient
@@ -17,13 +17,20 @@ def main():
     corp=c.corp_code(STOCK_CODE)
     rows=[]
     legacy_manifest=[]
+    previous_manifest=DOCS/"legacy_manifest.json"
+    if previous_manifest.exists():
+        try: legacy_manifest=json.loads(previous_manifest.read_text(encoding="utf-8"))
+        except (ValueError, OSError): pass
+    archived={x.get("rcept_no") for x in legacy_manifest if x.get("rcept_no")}
     current=date.today().year
 
     # 2010~2014: 원문 보존 + manifest. 정형 숫자는 임의 생성하지 않음.
     for y in range(START_YEAR, min(2015,current+1)):
+        if any(x.get("year")==y and x.get("status")=="raw_archived_needs_normalization" for x in legacy_manifest): continue
         try:
             items=save_legacy_documents(c,corp,y,RAW/"legacy"/str(y))
             for d in items:
+                if d.get("rcept_no") in archived: continue
                 legacy_manifest.append({"year":y,"report_nm":d.get("report_nm"),"rcept_no":d.get("rcept_no"),
                                         "status":"raw_archived_needs_normalization"})
         except Exception as e:
@@ -37,8 +44,8 @@ def main():
             for fs in ("CFS","OFS"):
                 try:
                     data=c.full_financials(corp,y,code,fs)
-                except Exception:
-                    data=[]
+                except Exception as e:
+                    raise RuntimeError(f"재무 API 실패 year={y} report={code} fs={fs}: {e}") from e
                 if data:
                     fs_used=fs; break
             if not data: continue
@@ -52,6 +59,7 @@ def main():
             pd.DataFrame(data).to_csv(RAW/f"{y}_{code}_{fs_used}.csv",index=False,encoding="utf-8-sig")
 
     df=add_ratios(pd.DataFrame(rows))
+    if df.empty: raise RuntimeError("재무 데이터가 0건입니다. 기존 대시보드를 덮어쓰지 않습니다.")
     if not df.empty:
         df.to_csv(PROCESSED/"financial_metrics.csv",index=False,encoding="utf-8-sig")
         df.to_csv(DOCS/"financial_metrics.csv",index=False,encoding="utf-8-sig")
@@ -62,6 +70,7 @@ def main():
     (DOCS/"legacy_manifest.json").write_text(json.dumps(legacy_manifest,ensure_ascii=False,indent=2),encoding="utf-8")
     peers=[{"company":n,"stock_code":s} for n,s in PEERS]
     (DOCS/"peers.json").write_text(json.dumps(peers,ensure_ascii=False,indent=2),encoding="utf-8")
+    (DOCS/"updated_at.json").write_text(json.dumps({"updated_at_utc":datetime.now(timezone.utc).isoformat(),"rows":len(df)},ensure_ascii=False),encoding="utf-8")
     print(f"updated rows={len(df)} corp_code={corp}")
 
 if __name__=="__main__":

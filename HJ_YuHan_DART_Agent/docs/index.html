@@ -17,7 +17,7 @@ th:first-child,td:first-child{text-align:left}.note{color:var(--muted);font-size
 @media(max-width:900px){.grid{grid-template-columns:1fr 1fr}.charts{grid-template-columns:1fr}.hero{display:block}}
 </style></head><body><main>
 <div class="hero"><div><div class="label">OpenDART · Automated Financial Intelligence</div><h1>유한양행 Financial Dashboard</h1>
-<div class="sub">사업보고서 · 반기보고서 · 분기보고서 | 매월 1일 자동 갱신</div></div><div class="pill" id="latest">Loading…</div></div>
+<div class="sub">사업보고서 · 반기보고서 · 분기보고서 | 매월 1일 갱신 시도 · 금액 단위: 억 원</div></div><div class="pill" id="latest">Loading…</div></div>
 <div class="grid" id="kpis"></div>
 <div class="charts"><div class="chart"><canvas id="revChart"></canvas></div><div class="chart"><canvas id="marginChart"></canvas></div></div>
 <div class="section"><h2>Annual</h2><div class="tablebox" id="annual"></div></div>
@@ -27,23 +27,25 @@ th:first-child,td:first-child{text-align:left}.note{color:var(--muted);font-size
 <p class="note">Peer group: 국내 전통 제약사 중심 비교군. 사업구조·신약 파이프라인·회계기준 차이를 고려해 단순 배수 비교만으로 결론내리지 않습니다.</p></div>
 <p class="note">2015년 이후: OpenDART 정형 재무 API. 2010~2014: 정형 API 제공범위 밖이므로 공시 원문을 별도 보존하며, 검증되지 않은 숫자를 자동 생성하지 않습니다. CFS 우선, 없으면 OFS를 사용합니다.</p>
 </main><script>
-const pct=x=>x==null||isNaN(x)?"—":(x*100).toFixed(1)+"%";
-const won=x=>x==null||isNaN(x)?"—":(x/1e8).toLocaleString("ko-KR",{maximumFractionDigits:0})+" 억";
+const labels={gross_profit:"매출총이익",pretax_income:"세전이익",current_assets:"유동자산",cash:"현금",receivables:"매출채권",inventory:"재고",current_liabilities:"유동부채",interest_bearing_debt:"이자부차입금",capex:"CAPEX",ebitda:"EBITDA",net_debt:"순차입금",gross_margin:"매출총이익률",ebitda_margin:"EBITDA 마진",revenue_growth:"매출 성장률",equity_ratio:"자기자본비율",debt_dependency:"차입금의존도",net_debt_ebitda:"순차입금/EBITDA",cfo_to_net_income:"영업CF/순이익",asset_turnover:"자산회전율"};
+const pct=x=>x==null||!Number.isFinite(Number(x))?"—":(x*100).toFixed(1)+"%";
+const won=x=>x==null||!Number.isFinite(Number(x))?"—":(x/1e8).toLocaleString("ko-KR",{maximumFractionDigits:0})+" 억";
 function parseCSV(t){let lines=t.trim().split(/\r?\n/);if(lines.length<2)return[];let h=lines[0].split(",");return lines.slice(1).map(l=>{let a=[],s="",q=false;for(let c of l){if(c=='"')q=!q;else if(c==","&&!q){a.push(s);s=""}else s+=c}a.push(s);return Object.fromEntries(h.map((k,i)=>[k,a[i]]))})}
 function table(rows,id){if(!rows.length){document.getElementById(id).innerHTML="<p class=note>데이터 없음</p>";return}
-let cols=["year","report_label","fs_div","revenue","operating_income","net_income","cfo","fcf","assets","liabilities","equity","operating_margin","net_margin","roe","roa","current_ratio","debt_to_equity","interest_coverage"];
+let cols=["year","report_label","fs_div","revenue","gross_profit","operating_income","pretax_income","net_income","assets","current_assets","cash","receivables","inventory","liabilities","current_liabilities","interest_bearing_debt","equity","cfo","capex","fcf","ebitda","net_debt","gross_margin","operating_margin","net_margin","ebitda_margin","revenue_growth","roa","roe","current_ratio","debt_to_equity","equity_ratio","debt_dependency","interest_coverage","net_debt_ebitda","cfo_to_net_income","asset_turnover"];
 let names={year:"연도",report_label:"보고서",fs_div:"기준",revenue:"매출액",operating_income:"영업이익",net_income:"순이익",cfo:"영업CF",fcf:"FCF",assets:"총자산",liabilities:"총부채",equity:"자본",operating_margin:"영업이익률",net_margin:"순이익률",roe:"ROE",roa:"ROA",current_ratio:"유동비율",debt_to_equity:"부채비율",interest_coverage:"이자보상"};
-let money=new Set(["revenue","operating_income","net_income","cfo","fcf","assets","liabilities","equity"]);let ratio=new Set(["operating_margin","net_margin","roe","roa","current_ratio","debt_to_equity"]);
+Object.assign(names,labels);
+let money=new Set(["revenue","gross_profit","operating_income","pretax_income","net_income","assets","current_assets","cash","receivables","inventory","liabilities","current_liabilities","interest_bearing_debt","equity","cfo","capex","fcf","ebitda","net_debt"]);let ratio=new Set(["gross_margin","operating_margin","net_margin","ebitda_margin","revenue_growth","roa","roe","current_ratio","debt_to_equity","equity_ratio","debt_dependency"]); let multiple=new Set(["interest_coverage","net_debt_ebitda","cfo_to_net_income","asset_turnover"]);
 let html="<table><thead><tr>"+cols.map(c=>`<th>${names[c]}</th>`).join("")+"</tr></thead><tbody>";
-for(let r of rows){html+="<tr>"+cols.map(c=>{let v=r[c]; if(money.has(c))v=won(+v); else if(ratio.has(c))v=pct(+v); else if(c=="interest_coverage")v=(+v).toFixed(1)+"x"; return `<td>${v||"—"}</td>`}).join("")+"</tr>"} html+="</tbody></table>";document.getElementById(id).innerHTML=html}
-(async()=>{let t=await fetch("data/financial_metrics.csv").then(r=>r.text());let d=parseCSV(t).map(r=>{for(let k in r)if(!["company","stock_code","corp_code","report_label","period_type","fs_div","rcept_no","source"].includes(k))r[k]=r[k]===""?null:+r[k];return r});
-d.sort((a,b)=>a.year-b.year||a.report_code-b.report_code);let ann=d.filter(x=>x.period_type=="annual"), latest=ann.at(-1)||d.at(-1);
+for(let r of rows){html+="<tr>"+cols.map(c=>{let v=r[c]; if(money.has(c))v=won(v); else if(ratio.has(c))v=pct(v); else if(multiple.has(c))v=v==null||!Number.isFinite(Number(v))?"—":Number(v).toFixed(1)+"x"; return `<td>${v==null||v===""?"—":v}</td>`}).join("")+"</tr>"} html+="</tbody></table>";document.getElementById(id).innerHTML=html}
+(async()=>{let response=await fetch("data/financial_metrics.csv");if(!response.ok)throw Error("데이터 로드 실패");let t=await response.text();let d=parseCSV(t).map(r=>{for(let k in r)if(!["company","stock_code","corp_code","report_label","period_type","fs_div","rcept_no","source","report_code"].includes(k))r[k]=r[k]===""?null:+r[k];return r});
+d.sort((a,b)=>a.year-b.year||Number(a.report_code)-Number(b.report_code));let ann=d.filter(x=>x.period_type=="annual"), latest=d.at(-1);
 document.getElementById("latest").textContent=latest?`Latest ${latest.year} · ${latest.fs_div}`:"No data yet";
 let ks=[["매출액",won(latest?.revenue)],["영업이익률",pct(latest?.operating_margin)],["ROE",pct(latest?.roe)],["FCF",won(latest?.fcf)]];
 document.getElementById("kpis").innerHTML=ks.map(x=>`<div class=card><div class=label>${x[0]}</div><div class=kpi>${x[1]}</div></div>`).join("");
-new Chart(document.getElementById("revChart"),{type:"line",data:{labels:ann.map(x=>x.year),datasets:[{label:"매출액(억원)",data:ann.map(x=>x.revenue/1e8)},{label:"영업이익(억원)",data:ann.map(x=>x.operating_income/1e8)}]},options:{responsive:true,plugins:{title:{display:true,text:"Annual Revenue & Operating Income"}}}});
-new Chart(document.getElementById("marginChart"),{type:"line",data:{labels:ann.map(x=>x.year),datasets:[{label:"영업이익률 %",data:ann.map(x=>x.operating_margin*100)},{label:"순이익률 %",data:ann.map(x=>x.net_margin*100)}]},options:{responsive:true,plugins:{title:{display:true,text:"Profitability Trend"}}}});
+if(typeof Chart!=="undefined")new Chart(document.getElementById("revChart"),{type:"line",data:{labels:ann.map(x=>x.year),datasets:[{label:"매출액(억원)",borderColor:"#4D86E8",backgroundColor:"#4D86E8",data:ann.map(x=>x.revenue/1e8)},{label:"영업이익(억원)",borderColor:"#D96B2A",backgroundColor:"#D96B2A",data:ann.map(x=>x.operating_income/1e8)}]},options:{responsive:true,plugins:{title:{display:true,text:"Annual Revenue & Operating Income"}}}});
+if(typeof Chart!=="undefined")new Chart(document.getElementById("marginChart"),{type:"line",data:{labels:ann.map(x=>x.year),datasets:[{label:"영업이익률 %",borderColor:"#4D86E8",backgroundColor:"#4D86E8",data:ann.map(x=>x.operating_margin*100)},{label:"순이익률 %",borderColor:"#D96B2A",backgroundColor:"#D96B2A",data:ann.map(x=>x.net_margin*100)}]},options:{responsive:true,plugins:{title:{display:true,text:"Profitability Trend"}}}});
 table(ann.slice().reverse(),"annual");table(d.filter(x=>x.period_type=="half_year").reverse(),"half_year");table(d.filter(x=>x.period_type=="quarterly").reverse(),"quarterly");
 let peers=await fetch("data/peers.json").then(r=>r.json());document.getElementById("peers").innerHTML="<table><thead><tr><th>기업</th><th>종목코드</th></tr></thead><tbody>"+peers.map(p=>`<tr><td>${p.company}</td><td>${p.stock_code}</td></tr>`).join("")+"</tbody></table>";
-})().catch(e=>{document.getElementById("latest").textContent="Run updater first";console.error(e)});
+})().catch(e=>{document.getElementById("latest").textContent="실데이터 미수집 · API 키 설정 후 업데이트 실행";console.error(e)});
 </script></body></html>

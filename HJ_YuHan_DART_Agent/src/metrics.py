@@ -18,7 +18,7 @@ ALIASES = {
  "current_liabilities": ["유동부채"],
  "equity": ["자본총계"],
  "cfo": ["영업활동현금흐름","영업활동으로 인한 현금흐름"],
- "interest_expense": ["이자비용","금융비용"],
+ "interest_expense": ["이자비용","이자비용"],
  "depreciation": ["감가상각비"],
  "amortization": ["무형자산상각비"],
  "capex_ppe": ["유형자산의 취득","유형자산 취득"],
@@ -47,9 +47,11 @@ def choose_amount(row):
 
 def extract(rows):
     values = {k: np.nan for k in ALIASES}
+    sections={"revenue":"IS","gross_profit":"IS","operating_income":"IS","pretax_income":"IS","net_income":"IS","assets":"BS","current_assets":"BS","cash":"BS","receivables":"BS","inventory":"BS","liabilities":"BS","current_liabilities":"BS","equity":"BS","cfo":"CF","interest_expense":"IS","depreciation":"CF","amortization":"CF","capex_ppe":"CF","capex_intangible":"CF","borrowings_current":"BS","borrowings_long":"BS"}
     for key, aliases in ALIASES.items():
         candidates=[]
         for r in rows:
+            if r.get("sj_div") != sections[key]: continue
             name = re.sub(r"\s+","", str(r.get("account_nm","")))
             if any(re.sub(r"\s+","",a) == name for a in aliases):
                 candidates.append(choose_amount(r))
@@ -63,9 +65,8 @@ def extract(rows):
         values["interest_bearing_debt"]=np.nan
     values["capex"] = sum([abs(x) for x in (values["capex_ppe"], values["capex_intangible"]) if not pd.isna(x)], start=0.0)
     if pd.isna(values["capex_ppe"]) and pd.isna(values["capex_intangible"]): values["capex"]=np.nan
-    values["ebitda"] = values["operating_income"]
-    for k in ("depreciation","amortization"):
-        if not pd.isna(values[k]) and not pd.isna(values["ebitda"]): values["ebitda"] += abs(values[k])
+    values["ebitda"] = (values["operating_income"] + abs(values["depreciation"]) + abs(values["amortization"])
+                        if all(not pd.isna(values[k]) for k in ("operating_income","depreciation","amortization")) else np.nan)
     values["fcf"] = values["cfo"] - values["capex"] if not pd.isna(values["cfo"]) and not pd.isna(values["capex"]) else np.nan
     values["net_debt"] = values["interest_bearing_debt"] - values["cash"] if not pd.isna(values["interest_bearing_debt"]) and not pd.isna(values["cash"]) else np.nan
     return values
@@ -94,5 +95,5 @@ def add_ratios(df):
         df.loc[s.index,"roa"]=[safe(n,(a+pa)/2) for n,a,pa in zip(s.net_income,s.assets,prev_assets)]
         df.loc[s.index,"roe"]=[safe(n,(e+pe)/2) for n,e,pe in zip(s.net_income,s.equity,prev_equity)]
         df.loc[s.index,"asset_turnover"]=[safe(rv,(a+pa)/2) for rv,a,pa in zip(s.revenue,s.assets,prev_assets)]
-        df.loc[s.index,"revenue_growth"]=s.revenue.pct_change().values
+        df.loc[s.index,"revenue_growth"]=s.revenue.pct_change(fill_method=None).values
     return df
