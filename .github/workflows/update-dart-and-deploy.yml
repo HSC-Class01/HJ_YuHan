@@ -5,6 +5,10 @@ on:
     # 매월 1일 09:15 KST = 00:15 UTC
     - cron: "15 0 1 * *"
   workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "HJ_YuHan_DART_Agent/src/**"
 
 permissions:
   contents: write
@@ -44,10 +48,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add HJ_YuHan_DART_Agent/data \
-                  HJ_YuHan_DART_Agent/docs/data
-          git diff --cached --quiet || \
-            git commit -m "chore: monthly OpenDART data update"
+          git add HJ_YuHan_DART_Agent/data                   HJ_YuHan_DART_Agent/docs/data
+          git diff --cached --quiet ||             git commit -m "chore: monthly OpenDART data update"
           git push
 
       - name: Configure Pages
