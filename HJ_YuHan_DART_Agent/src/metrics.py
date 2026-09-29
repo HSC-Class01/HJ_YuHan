@@ -1,4 +1,3 @@
-
 import math, re
 import pandas as pd
 import numpy as np
@@ -18,13 +17,23 @@ ALIASES = {
  "current_liabilities": ["유동부채"],
  "equity": ["자본총계"],
  "cfo": ["영업활동현금흐름","영업활동으로 인한 현금흐름"],
- "interest_expense": ["이자비용","이자비용"],
+ "interest_expense": ["이자비용","금융비용"],
  "depreciation": ["감가상각비"],
  "amortization": ["무형자산상각비"],
  "capex_ppe": ["유형자산의 취득","유형자산 취득"],
  "capex_intangible": ["무형자산의 취득","무형자산 취득"],
  "borrowings_current": ["단기차입금"],
  "borrowings_long": ["장기차입금"],
+}
+
+# OpenDART/XBRL account IDs are more stable than localized account names.
+# Names remain as a fallback for issuers/periods where account_id is absent.
+ACCOUNT_IDS = {
+ "revenue": {"ifrs-full_Revenue"},
+ "gross_profit": {"ifrs-full_GrossProfit"},
+ "operating_income": {"dart_OperatingIncomeLoss","ifrs-full_OperatingIncomeLoss"},
+ "pretax_income": {"ifrs-full_ProfitLossBeforeTax"},
+ "net_income": {"ifrs-full_ProfitLoss"},
 }
 
 def num(x):
@@ -47,26 +56,70 @@ def choose_amount(row):
 
 def extract(rows):
     values = {k: np.nan for k in ALIASES}
-    sections={"revenue":"IS","gross_profit":"IS","operating_income":"IS","pretax_income":"IS","net_income":"IS","assets":"BS","current_assets":"BS","cash":"BS","receivables":"BS","inventory":"BS","liabilities":"BS","current_liabilities":"BS","equity":"BS","cfo":"CF","interest_expense":"IS","depreciation":"CF","amortization":"CF","capex_ppe":"CF","capex_intangible":"CF","borrowings_current":"BS","borrowings_long":"BS"}
+    sections={
+        "revenue":{"IS","CIS"},
+        "gross_profit":{"IS","CIS"},
+        "operating_income":{"IS","CIS"},
+        "pretax_income":{"IS","CIS"},
+        "net_income":{"IS","CIS"},
+        "assets":{"BS"},
+        "current_assets":{"BS"},
+        "cash":{"BS"},
+        "receivables":{"BS"},
+        "inventory":{"BS"},
+        "liabilities":{"BS"},
+        "current_liabilities":{"BS"},
+        "equity":{"BS"},
+        "cfo":{"CF"},
+        "interest_expense":{"IS","CIS"},
+        "depreciation":{"CF"},
+        "amortization":{"CF"},
+        "capex_ppe":{"CF"},
+        "capex_intangible":{"CF"},
+        "borrowings_current":{"BS"},
+        "borrowings_long":{"BS"},
+    }
+
+    def norm(x):
+        return re.sub(r"\s+","",str(x or ""))
+
     for key, aliases in ALIASES.items():
         candidates=[]
+        ids = ACCOUNT_IDS.get(key, set())
         for r in rows:
-            if r.get("sj_div") != sections[key]: continue
-            name = re.sub(r"\s+","", str(r.get("account_nm","")))
-            if any(re.sub(r"\s+","",a) == name for a in aliases):
-                candidates.append(choose_amount(r))
-        candidates=[x for x in candidates if not pd.isna(x)]
-        if candidates: values[key]=candidates[0]
+            if r.get("sj_div") not in sections[key]:
+                continue
+            account_id = str(r.get("account_id","") or "").strip()
+            name = norm(r.get("account_nm",""))
+            matched = account_id in ids if ids else False
+            if not matched:
+                matched = any(norm(a) == name for a in aliases)
+            if matched:
+                amount = choose_amount(r)
+                if not pd.isna(amount):
+                    candidates.append(amount)
+        if candidates:
+            values[key]=candidates[0]
+
     values["interest_bearing_debt"] = sum(
         [x for x in (values["borrowings_current"], values["borrowings_long"]) if not pd.isna(x)],
         start=0.0
     )
     if pd.isna(values["borrowings_current"]) and pd.isna(values["borrowings_long"]):
         values["interest_bearing_debt"]=np.nan
-    values["capex"] = sum([abs(x) for x in (values["capex_ppe"], values["capex_intangible"]) if not pd.isna(x)], start=0.0)
-    if pd.isna(values["capex_ppe"]) and pd.isna(values["capex_intangible"]): values["capex"]=np.nan
-    values["ebitda"] = (values["operating_income"] + abs(values["depreciation"]) + abs(values["amortization"])
-                        if all(not pd.isna(values[k]) for k in ("operating_income","depreciation","amortization")) else np.nan)
+
+    values["capex"] = sum(
+        [abs(x) for x in (values["capex_ppe"], values["capex_intangible"]) if not pd.isna(x)],
+        start=0.0
+    )
+    if pd.isna(values["capex_ppe"]) and pd.isna(values["capex_intangible"]):
+        values["capex"]=np.nan
+
+    values["ebitda"] = (
+        values["operating_income"] + abs(values["depreciation"]) + abs(values["amortization"])
+        if all(not pd.isna(values[k]) for k in ("operating_income","depreciation","amortization"))
+        else np.nan
+    )
     values["fcf"] = values["cfo"] - values["capex"] if not pd.isna(values["cfo"]) and not pd.isna(values["capex"]) else np.nan
     values["net_debt"] = values["interest_bearing_debt"] - values["cash"] if not pd.isna(values["interest_bearing_debt"]) and not pd.isna(values["cash"]) else np.nan
     return values
