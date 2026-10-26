@@ -9,6 +9,10 @@ on:
     branches: ["main"]
     paths:
       - "HJ_YuHan_DART_Agent/src/**"
+      - "HJ_YuHan_DART_Agent/docs/index.html"
+      - "HJ_YuHan_DART_Agent/docs/data/rnd_costs.csv"
+      - "HJ_YuHan_DART_Agent/README.md"
+      - ".github/workflows/update-dart-and-deploy.yml"
 
 permissions:
   contents: write
@@ -25,12 +29,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.11"
 
