@@ -9,6 +9,10 @@ on:
     branches: ["main"]
     paths:
       - "HJ_YuHan_DART_Agent/src/**"
+      - "HJ_YuHan_DART_Agent/docs/index.html"
+      - "HJ_YuHan_DART_Agent/docs/data/rnd_costs.csv"
+      - "HJ_YuHan_DART_Agent/README.md"
+      - ".github/workflows/update-dart-and-deploy.yml"
 
 permissions:
   contents: write
