@@ -23,7 +23,8 @@ th:first-child,td:first-child{text-align:left}.note{color:var(--muted);font-size
 <div class="section"><h2>Annual</h2><div class="tablebox" id="annual"></div></div>
 <div class="section"><h2>Half-year</h2><div class="tablebox" id="half_year"></div></div>
 <div class="section"><h2>Quarterly</h2><div class="tablebox" id="quarterly"></div></div>
-<div class="section"><h2>R&amp;D Investment (2015 onward)</h2><p class="note">연구개발비는 사업보고서의 연구개발 활동 표와 외부 집계 자료를 바탕으로 한 일부 연도 확인값입니다. 현재 2021~2024년만 입력되어 있으며 2015~2020년은 원문 대조 전까지 공란으로 유지합니다. 출처 링크와 집계 기준을 함께 확인하세요.</p><div class="charts"><div class="chart"><canvas id="rndChart"></canvas></div><div class="tablebox" id="rndTable"></div></div></div>\n<div class="section"><h2>Domestic Peer Firms</h2><div class="tablebox" id="peers"></div>
+<div class="section"><h2>Annual R&amp;D Investment</h2><p class="note">연도별 연구개발비(억원). 현재 확인된 값은 2021~2024년이며, 2015~2020년 및 값이 확인되지 않은 연도는 임의 추정 없이 —로 표시합니다. 출처 링크와 집계 주석을 표에서 확인하세요.</p><div class="charts"><div class="chart"><canvas id="rndChart"></canvas></div><div class="tablebox" id="rndTable"></div></div></div>
+<div class="section"><h2>Annual CAPEX</h2><p class="note">연간 CAPEX는 OpenDART 현금흐름표의 유형자산 취득액과 무형자산 취득액의 절댓값 합으로 계산합니다. 연간 사업보고서(annual)만 사용하며, 금액 단위는 억 원입니다.</p><div class="charts"><div class="chart"><canvas id="capexChart"></canvas></div><div class="tablebox" id="capexTable"></div></div></div>\n<div class="section"><h2>Domestic Peer Firms</h2><div class="tablebox" id="peers"></div>
 <p class="note">Peer group: 국내 전통 제약사 중심 비교군. 사업구조·신약 파이프라인·회계기준 차이를 고려해 단순 배수 비교만으로 결론내리지 않습니다.</p></div>
 <p class="note">2015년 이후: OpenDART 정형 재무 API. 2010~2014: 정형 API 제공범위 밖이므로 공시 원문을 별도 보존하며, 검증되지 않은 숫자를 자동 생성하지 않습니다. CFS 우선, 없으면 OFS를 사용합니다.</p>
 </main><script>
@@ -46,7 +47,47 @@ document.getElementById("kpis").innerHTML=ks.map(x=>`<div class=card><div class=
 if(typeof Chart!=="undefined")new Chart(document.getElementById("revChart"),{type:"line",data:{labels:ann.map(x=>x.year),datasets:[{label:"매출액(억원)",borderColor:"#4D86E8",backgroundColor:"#4D86E8",data:ann.map(x=>x.revenue/1e8)},{label:"영업이익(억원)",borderColor:"#D96B2A",backgroundColor:"#D96B2A",data:ann.map(x=>x.operating_income/1e8)}]},options:{responsive:true,plugins:{title:{display:true,text:"Annual Revenue & Operating Income"}}}});
 if(typeof Chart!=="undefined")new Chart(document.getElementById("marginChart"),{type:"line",data:{labels:ann.map(x=>x.year),datasets:[{label:"영업이익률 %",borderColor:"#4D86E8",backgroundColor:"#4D86E8",data:ann.map(x=>x.operating_margin*100)},{label:"순이익률 %",borderColor:"#D96B2A",backgroundColor:"#D96B2A",data:ann.map(x=>x.net_margin*100)}]},options:{responsive:true,plugins:{title:{display:true,text:"Profitability Trend"}}}});
 table(ann.slice().reverse(),"annual");table(d.filter(x=>x.period_type=="half_year").reverse(),"half_year");table(d.filter(x=>x.period_type=="quarterly").reverse(),"quarterly");
-let rndResponse=await fetch("data/rnd_costs.csv"); if(rndResponse.ok){let rnd=parseCSV(await rndResponse.text());rnd.forEach(r=>{r.year=+r.year;r.rnd_cost_100m_krw=+r.rnd_cost_100m_krw;r.revenue_ratio_pct=r.revenue_ratio_pct===""?null:+r.revenue_ratio_pct});rnd.sort((a,b)=>a.year-b.year);if(typeof Chart!=="undefined")new Chart(document.getElementById("rndChart"),{type:"bar",data:{labels:rnd.map(r=>r.year),datasets:[{label:"연구개발비 (억원)",data:rnd.map(r=>r.rnd_cost_100m_krw)}]},options:{responsive:true,plugins:{title:{display:true,text:"Reported R&D costs (억원)"}}}});document.getElementById("rndTable").innerHTML="<table><thead><tr><th>연도</th><th>연구개발비(억원)</th><th>매출 대비</th><th>출처</th></tr></thead><tbody>"+rnd.slice().reverse().map(r=>`<tr><td>${r.year}</td><td>${r.rnd_cost_100m_krw.toLocaleString("ko-KR",{maximumFractionDigits:2})}</td><td>${r.revenue_ratio_pct==null?"—":r.revenue_ratio_pct+"%"}</td><td><a href="${r.source}" target="_blank" rel="noopener noreferrer">원문/자료</a></td></tr>`).join("")+"</tbody></table>"}else document.getElementById("rndTable").textContent="R&D 데이터 파일을 찾을 수 없습니다.";
+let rndResponse=await fetch("data/rnd_costs.csv");
+if(rndResponse.ok){
+  const rndRaw=parseCSV(await rndResponse.text());
+  const rndByYear=new Map(rndRaw.map(r=>[Number(r.year),{
+    year:Number(r.year),
+    rnd_cost_100m_krw:r.rnd_cost_100m_krw===""?null:Number(r.rnd_cost_100m_krw),
+    revenue_ratio_pct:r.revenue_ratio_pct===""?null:Number(r.revenue_ratio_pct),
+    source:r.source||"",
+    notes:r.notes||""
+  }]));
+  const minYear=ann.length?Math.min(...ann.map(r=>Number(r.year))):2015;
+  const maxYear=ann.length?Math.max(...ann.map(r=>Number(r.year))):2025;
+  const rndAnnual=Array.from({length:maxYear-minYear+1},(_,i)=>{
+    const year=minYear+i;
+    return rndByYear.get(year)||{year,rnd_cost_100m_krw:null,revenue_ratio_pct:null,source:"",notes:"아직 확인된 연간 수치가 없음"};
+  });
+  if(typeof Chart!=="undefined")new Chart(document.getElementById("rndChart"),{
+    type:"bar",
+    data:{labels:rndAnnual.map(r=>r.year),datasets:[{label:"연구개발비 (억원)",data:rndAnnual.map(r=>r.rnd_cost_100m_krw),backgroundColor:"#45d6a8"}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{title:{display:true,text:"Annual R&D Expenses (억원)"},tooltip:{callbacks:{label:ctx=>ctx.raw==null?"자료 미확인":ctx.raw.toLocaleString("ko-KR")+" 억원"}}},scales:{y:{beginAtZero:true,title:{display:true,text:"억원"}}}}
+  });
+  document.getElementById("rndTable").innerHTML="<table><thead><tr><th>연도</th><th>연구개발비(억원)</th><th>매출 대비</th><th>자료 출처</th><th>주석</th></tr></thead><tbody>"+
+    rndAnnual.slice().reverse().map(r=>`<tr><td>${r.year}</td><td>${r.rnd_cost_100m_krw==null?"—":r.rnd_cost_100m_krw.toLocaleString("ko-KR",{maximumFractionDigits:2})}</td><td>${r.revenue_ratio_pct==null?"—":r.revenue_ratio_pct+"%"}</td><td>${r.source?`<a href="${r.source}" target="_blank" rel="noopener noreferrer">자료 보기</a>`:"—"}</td><td>${r.notes||"—"}</td></tr>`).join("")+"</tbody></table>";
+}else document.getElementById("rndTable").textContent="R&D 데이터 파일을 찾을 수 없습니다.";
+
+const capexAnnual=ann.slice().filter(r=>r.year!=null).sort((a,b)=>Number(a.year)-Number(b.year));
+if(typeof Chart!=="undefined")new Chart(document.getElementById("capexChart"),{
+  type:"bar",
+  data:{labels:capexAnnual.map(r=>r.year),datasets:[{label:"총 CAPEX (억원)",data:capexAnnual.map(r=>Number.isFinite(Number(r.capex))?Number(r.capex)/1e8:null),backgroundColor:"#4D86E8"}]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{title:{display:true,text:"Annual CAPEX (억원)"},tooltip:{callbacks:{label:ctx=>ctx.raw==null?"자료 미확인":ctx.raw.toLocaleString("ko-KR",{maximumFractionDigits:1})+" 억원"}}},scales:{y:{beginAtZero:true,title:{display:true,text:"억원"}}}}
+});
+document.getElementById("capexTable").innerHTML=capexAnnual.length
+  ?"<table><thead><tr><th>연도</th><th>유형자산 취득(억원)</th><th>무형자산 취득(억원)</th><th>총 CAPEX(억원)</th><th>재무제표 기준</th><th>공시</th></tr></thead><tbody>"+
+    capexAnnual.slice().reverse().map(r=>{
+      const ppe=r.capex_ppe==null||r.capex_ppe===""?null:Math.abs(Number(r.capex_ppe));
+      const intangible=r.capex_intangible==null||r.capex_intangible===""?null:Math.abs(Number(r.capex_intangible));
+      const total=r.capex==null||r.capex===""?null:Number(r.capex);
+      const filing=r.rcept_no?`<a href="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${encodeURIComponent(r.rcept_no)}" target="_blank" rel="noopener noreferrer">DART 원문</a>`:"—";
+      return `<tr><td>${r.year}</td><td>${ppe==null?"—":won(ppe)}</td><td>${intangible==null?"—":won(intangible)}</td><td>${total==null?"—":won(total)}</td><td>${r.fs_div||"—"}</td><td>${filing}</td></tr>`;
+    }).join("")+"</tbody></table>"
+  :"<p class=note>연간 CAPEX 데이터가 없습니다.</p>";
 let peers=await fetch("data/peers.json").then(r=>r.json());document.getElementById("peers").innerHTML="<table><thead><tr><th>기업</th><th>종목코드</th></tr></thead><tbody>"+peers.map(p=>`<tr><td>${p.company}</td><td>${p.stock_code}</td></tr>`).join("")+"</tbody></table>";
 })().catch(e=>{document.getElementById("latest").textContent="실데이터 미수집 · API 키 설정 후 업데이트 실행";console.error(e)});
 </script></body></html>
