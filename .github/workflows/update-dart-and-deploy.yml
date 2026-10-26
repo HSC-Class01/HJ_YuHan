@@ -9,10 +9,6 @@ on:
     branches: ["main"]
     paths:
       - "HJ_YuHan_DART_Agent/src/**"
-      - "HJ_YuHan_DART_Agent/docs/index.html"
-      - "HJ_YuHan_DART_Agent/docs/data/rnd_costs.csv"
-      - "HJ_YuHan_DART_Agent/README.md"
-      - ".github/workflows/update-dart-and-deploy.yml"
 
 permissions:
   contents: write
@@ -25,16 +21,16 @@ concurrency:
 
 jobs:
   update-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -50,11 +46,42 @@ jobs:
 
       - name: Commit updated data
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add HJ_YuHan_DART_Agent/data                   HJ_YuHan_DART_Agent/docs/data
-          git diff --cached --quiet ||             git commit -m "chore: monthly OpenDART data update"
-          git push
+          git add HJ_YuHan_DART_Agent/data HJ_YuHan_DART_Agent/docs/data
+
+          if git diff --cached --quiet; then
+            echo "No financial data changes to commit."
+            exit 0
+          fi
+
+          git commit -m "chore: monthly OpenDART data update"
+
+          # Another commit (for example a dashboard edit) can reach main while
+          # the scheduled data refresh is running. Rebase the generated commit
+          # onto the latest main before pushing, and retry a concurrent push race.
+          for attempt in 1 2 3; do
+            git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              echo "::error::Could not rebase generated data changes onto origin/main. Check for conflicting edits to generated data files."
+              exit 1
+            fi
+
+            if git push origin HEAD:main; then
+              echo "Financial data update pushed successfully."
+              exit 0
+            fi
+
+            echo "Push raced with another main update (attempt ${attempt}/3). Retrying."
+            if [ "${attempt}" -lt 3 ]; then
+              sleep $((attempt * 2))
+            fi
+          done
+
+          echo "::error::Could not push financial data update after 3 attempts."
+          exit 1
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
